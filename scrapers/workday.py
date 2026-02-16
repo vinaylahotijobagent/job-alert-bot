@@ -1,6 +1,10 @@
 import requests
 
 def fetch_workday_jobs(company_config):
+    """
+    Universal Workday V2 scraper.
+    Works for modern Workday career sites.
+    """
 
     host = company_config["host"]
     tenant = company_config["tenant"]
@@ -22,29 +26,36 @@ def fetch_workday_jobs(company_config):
         "Referer": f"https://{host}/"
     }
 
-    response = requests.post(url, json=payload, headers=headers)
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
+    except Exception as e:
+        print(f"Request failed for {company_config['company']}: {e}")
+        return []
 
-    print(f"{company_config['company']} status:", response.status_code)
+    print(f"{company_config['company']} status: {response.status_code}")
 
     if response.status_code != 200:
-        print("Response text:", response.text[:500])
+        print("Response preview:", response.text[:300])
         return []
 
     try:
         data = response.json()
-    except:
-        print("Not JSON response")
+    except Exception:
+        print("Response was not JSON")
+        print(response.text[:300])
         return []
 
     jobs = []
 
     for job in data.get("jobPostings", []):
         jobs.append({
-            "id": job.get("title") + job.get("locationsText", ""),
+            "id": f"{job.get('title','')}-{job.get('locationsText','')}",
             "title": job.get("title", ""),
             "location": job.get("locationsText", ""),
             "posted": job.get("postedOn", ""),
             "url": f"https://{host}{job.get('externalPath', '')}"
         })
+
+    print(f"{company_config['company']} jobs fetched:", len(jobs))
 
     return jobs
