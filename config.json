@@ -1,0 +1,12 @@
+[
+  {
+    "company": "Wells Fargo",
+    "ats": "workday",
+    "base_url": "https://wd1.myworkdaysite.com/recruiting/wf/WellsFargoJobs"
+  },
+  {
+    "company": "JPMorgan Chase",
+    "ats": "oracle",
+    "base_url": "https://jpmc.fa.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
+  }
+]
