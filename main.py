@@ -1,122 +1,54 @@
-import os
 import json
-import requests
-from serpapi import GoogleSearch
-from datetime import datetime
+from scrapers.workday import fetch_workday_jobs
+from scrapers.oracle import fetch_oracle_jobs
+from notifier.telegram import send_message
+from utils.filters import keyword_match, location_match
+from utils.storage import load_seen, save_seen
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]
-SERPAPI_KEY = os.environ["SERPAPI_KEY"]
-
-LOCATION = "Hyderabad"
-POSTED_WITHIN_HOURS = 24
-
-KEYWORDS = [
-    "data analyst",
-    "business intelligence",
-    "bi",
-    "power bi",
-    "tableau",
-    "databricks",
-    "azure",
-    "python",
-    "analytics",
-    "data engineer"
-]
-
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
-    requests.post(url, json=payload)
-
-def load_json(file):
-    if os.path.exists(file):
-        with open(file) as f:
-            return json.load(f)
-    return []
-
-def save_json(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f)
-
-def is_recent(posted_at):
-    if not posted_at:
-        return False
-    posted_at = posted_at.lower()
-    if "hour" in posted_at:
-        return True
-    if "1 day" in posted_at:
-        return True
-    return False
-
-def keyword_match(title):
-    title = title.lower()
-    return any(keyword in title for keyword in KEYWORDS)
-
-def search_jobs(company):
-    params = {
-        "engine": "google_jobs",
-        "q": f"{company} jobs in {LOCATION}",
-        "api_key": SERPAPI_KEY
-    }
-    search = GoogleSearch(params)
-    results = search.get_dict()
-    return results.get("jobs_results", [])
+def load_config():
+    with open("config.json") as f:
+        return json.load(f)
 
 def main():
-    companies = load_json("companies.json")
-    seen_jobs = load_json("seen_jobs.json")
-    new_seen = seen_jobs.copy()
-
+    config = load_config()
+    seen = load_seen()
+    new_seen = seen.copy()
     alerts = []
 
-    for company in companies:
-        print(f"Checking {company}...")
-        jobs = search_jobs(company)
+    for company in config:
+        if company["ats"] == "workday":
+            jobs = fetch_workday_jobs(company["base_url"])
+        elif company["ats"] == "oracle":
+            jobs = fetch_oracle_jobs(company["base_url"])
+        else:
+            continue
 
         for job in jobs:
-            job_id = job.get("job_id")
-            if not job_id or job_id in seen_jobs:
+            if job["id"] in seen:
                 continue
 
-            title = job.get("title", "")
-            location = job.get("location", "")
-            posted = job.get("detected_extensions", {}).get("posted_at", "")
-            link = job.get("apply_options", [{}])[0].get("link", "")
-
-            if LOCATION.lower() not in location.lower():
+            if not keyword_match(job["title"]):
                 continue
 
-            if not is_recent(posted):
+            if not location_match(job["location"]):
                 continue
 
-            if not keyword_match(title):
-                continue
-
-            alert_text = (
-                f"<b>{title}</b>\n"
-                f"{company}\n"
-                f"{location}\n"
-                f"{posted}\n"
-                f"{link}\n\n"
+            alert = (
+                f"<b>{job['title']}</b>\n"
+                f"{company['company']}\n"
+                f"{job['location']}\n"
+                f"{job['url']}\n\n"
             )
 
-            alerts.append(alert_text)
-            new_seen.append(job_id)
+            alerts.append(alert)
+            new_seen.append(job["id"])
 
     if alerts:
-        message = "🚀 <b>New Data/BI Jobs - Hyderabad (Last 24h)</b>\n\n"
+        message = "🚀 <b>New Data/BI Jobs - Hyderabad</b>\n\n"
         message += "".join(alerts[:10])
-        send_telegram_message(message)
-        print("Alert sent.")
-    else:
-        print("No new jobs.")
+        send_message(message)
 
-    save_json("seen_jobs.json", new_seen)
+    save_seen(new_seen)
 
 if __name__ == "__main__":
     main()
